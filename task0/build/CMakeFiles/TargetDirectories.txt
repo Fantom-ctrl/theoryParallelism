@@ -1,3 +1,0 @@
-C:/Main/NSU/Code/theoryParallelism/task0/build/CMakeFiles/sine_array.dir
-C:/Main/NSU/Code/theoryParallelism/task0/build/CMakeFiles/edit_cache.dir
-C:/Main/NSU/Code/theoryParallelism/task0/build/CMakeFiles/rebuild_cache.dir
