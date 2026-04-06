@@ -5,37 +5,53 @@
 #include <chrono>
 #include <cmath>
 
-
-double gaussian(double x) 
+double compute(double val) 
 {
-    return exp(-x*x);
+    return exp(-val*val);
 };
 
 int main(int argc, char* argv[]) 
 {
 
-    size_t steps_count = 40'000'000;
+    size_t steps = 40'000'000;
 
     if (argc > 1) 
     {
-        steps_count = atoi(argv[1]);
+        steps = atoi(argv[1]);
     }
 
-    double left_bound = -4.0;
-    double right_bound = 4.0;
-    double step_size = (right_bound - left_bound) / steps_count;
-    double integral_sum = 0.0;
-
-    auto time_start = std::chrono::steady_clock::now();
+    double left = -4.0;
+    double right = 4.0;
+    double dx = (right - left) / steps;
+    double total = 0.0;
   
-    #pragma omp parallel for reduction(+:integral_sum) schedule(static)
-    for (int step_index = 0; step_index < steps_count; step_index++) 
+    auto start_time = std::chrono::steady_clock::now();
+    #pragma omp parallel reduction(+:total)
     {
-        integral_sum += gaussian(left_bound + step_size * (step_index + 0.5));
+        size_t threads_count = omp_get_num_threads();
+        size_t thread_id = omp_get_thread_num();
+        size_t chunk_size = steps / threads_count;
+        size_t lower_bound = thread_id * chunk_size;
+        size_t upper_bound = 0;
+        if (thread_id == threads_count - 1)
+        {
+            upper_bound = steps;
+        }
+        else
+        {
+            upper_bound = lower_bound + chunk_size;
+        }
+
+        double current_x = left + dx * (lower_bound + 0.5);
+        for (size_t i = lower_bound; i < upper_bound; i++)
+        {   
+            total += compute(current_x);
+            current_x += dx;
+        }
     }
-    integral_sum *= step_size;
+    total *= dx;
 
-    auto time_end = std::chrono::steady_clock::now();
+    auto end_time = std::chrono::steady_clock::now();
 
-    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count() << std::endl;
+    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << std::endl;
 };
