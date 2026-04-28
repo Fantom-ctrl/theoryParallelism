@@ -15,14 +15,14 @@
 #include <string>
 #include <type_traits>
 #include <vector>
-
+#include <chrono>
 
 template<typename T>
 class Srv
 {
 private:
     std::thread th;
-    std::atomic<bool> stop{false};
+    std::atomic<bool> s{false};
 
     std::mutex m;
     std::condition_variable cv;
@@ -33,14 +33,14 @@ private:
     std::unordered_map<size_t, std::future<T>> res;
 
 public:
-    Srv() 
+    Srv()
     {
-        run();
+        start();
     }
 
-    void run()
+    void start()
     {
-        stop.store(false);
+        s.store(false);
 
         th = std::thread([this]()
         {
@@ -53,24 +53,24 @@ public:
 
                     cv.wait(lk, [this]
                     {
-                        return stop.load() || !q.empty();
+                        return s.load() || !q.empty();
                     });
 
-                    if (stop.load() && q.empty())
+                    if (s.load() && q.empty())
                         break;
 
                     cur = std::move(q.front());
                     q.pop();
                 }
 
-                cur.second(); 
+                cur.second();
             }
         });
     }
 
-    void halt()
+    void stop()
     {
-        stop.store(true);
+        s.store(true);
         cv.notify_all();
 
         if (th.joinable())
@@ -78,7 +78,7 @@ public:
     }
 
     template<typename F, typename... A>
-    size_t push(F&& f, A&&... a)
+    size_t add_task(F&& f, A&&... a)
     {
         auto task = std::packaged_task<T()>(
             std::bind(std::forward<F>(f), std::forward<A>(a)...)
@@ -98,7 +98,7 @@ public:
         return id;
     }
 
-    T get(size_t id)
+    T request_result(size_t id)
     {
         std::future<T> fut;
 
@@ -118,119 +118,101 @@ public:
 
     ~Srv()
     {
-        halt();
+        stop();
     }
 };
 
-thread_local std::mt19937 rng(std::random_device{}());
-thread_local std::uniform_real_distribution<double> d(1.0, 5.0);
-thread_local std::uniform_int_distribution<size_t> n_dist(6, 9999);
-
-template<typename T>
-struct arity;
-
-template<typename R, typename... A>
-struct arity<R(*)(A...)>
+template<typename F, typename T>
+auto call(F f, const std::vector<T>& v)
 {
-    static constexpr size_t val = sizeof...(A);
-};
-
-template<typename F, typename T, std::size_t... I>
-auto call_vec(F f, const std::vector<T>& v, std::index_sequence<I...>)
-{
-    return f(v[I]...);
+    if constexpr (std::is_invocable_v<F, T>)
+        return f(v[0]);
+    else
+        return f(v[0], v[1]);
 }
 
 template<typename T, typename F>
-void cli(Srv<T>& srv, F f, const std::string& name)
+void client(Srv<T>& srv, F f, const std::string& name, const std::vector<std::vector<T>>& data)
 {
-    size_t N = n_dist(rng);
-
     std::ofstream out(name);
-    if (!out.is_open())
-    {
-        std::cerr << "file error\n";
-        return;
-    }
-
-    constexpr size_t k = arity<std::decay_t<F>>::val;
-    constexpr auto idx = std::make_index_sequence<k>{};
-
     std::vector<size_t> ids;
 
-    for (size_t i = 0; i < N; i++)
+    for (const auto& v : data)
     {
-        std::vector<T> v;
-        for (size_t j = 0; j < k; j++)
+        auto task = [f, v]() -> T
         {
-            v.push_back(static_cast<T>(d(rng)));
-        }
-
-        auto task = [f, v, idx]() -> T
-        {
-            return call_vec(f, v, idx);
+            return call(f, v);
         };
 
-        ids.push_back(srv.push(task));
+        ids.push_back(srv.add_task(task));
     }
 
     for (size_t id : ids)
-    {
-        T r = srv.get(id);
-        out << r << "\n";
-    }
+        out << srv.request_result(id) << "\n";
 }
 
 template<typename T>
-T f_sin(T x) 
-{ 
-    return std::sin(x); 
-}
-
-template<typename T>
-T f_sqrt(T x) 
-{ 
-    return std::sqrt(x); 
-}
-
-template<typename T>
-T f_pow(T x, T y) 
-{ 
-    return std::pow(x, y); 
-}
-
-void check(const std::string& name)
+T f_sin(T x)
 {
-    std::ifstream in(name);
-    double x;
+    return std::sin(x);
+}
 
-    while (in >> x)
+template<typename T>
+T f_sqrt(T x)
+{
+    return std::sqrt(x);
+}
+
+template<typename T>
+T f_pow(T x, T y)
+{
+    return std::pow(x, y);
+}
+
+int main(int argc, char* argv[])
+{
+    size_t N = 1000;
+    if (argc == 2)
     {
-        if (std::isnan(x) || std::isinf(x))
-        {
-            std::cout << "bad " << name << "\n";
-            return;
-        }
+        N = std::stoul(argv[1]);
     }
 
-    std::cout << name << " OK\n";
-}
+    std::ofstream dataf("data.txt");
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<double> d(1.0, 5.0);
 
-int main()
-{
+    for (size_t i = 0; i < N; i++)
+    {
+        dataf << d(rng) << " " << d(rng) << "\n";
+    }
+
+    dataf.close();
+
+    std::vector<std::vector<double>> data;
+    std::ifstream in("data.txt");
+
+    double x, y;
+    while (in >> x >> y)
+        data.push_back({x, y});
+
+    auto start = std::chrono::high_resolution_clock::now();
+
     Srv<double> srv;
 
-    std::thread a([&]() { cli(srv, f_sin<double>,  "res_sin.txt"); });
-    std::thread b([&]() { cli(srv, f_sqrt<double>, "res_sqrt.txt"); });
-    std::thread c([&]() { cli(srv, f_pow<double>,  "res_pow.txt"); });
+    std::thread a([&]() { client(srv, f_sin<double>,  "res_sin.txt", data); });
+    std::thread b([&]() { client(srv, f_sqrt<double>, "res_sqrt.txt", data); });
+    std::thread c([&]() { client(srv, f_pow<double>,  "res_pow.txt", data); });
 
     a.join();
     b.join();
     c.join();
 
-    check("res_sin.txt");
-    check("res_sqrt.txt");
-    check("res_pow.txt");
+    srv.stop();
+
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double seconds = std::chrono::duration<double>(end - start).count();
+    std::cout << seconds << " seconds\n";
 
     return 0;
 }
