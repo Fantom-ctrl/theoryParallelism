@@ -7,14 +7,19 @@ bool cmp(const std::string& ref_name, const std::string& res_name)
     std::ifstream ref(ref_name), res(res_name);
 
     double a, b;
+    size_t i = 0;
 
     while (ref >> a && res >> b)
     {
         if (std::abs(a - b) > 1e-6)
         {
-            std::cout << "Mismatch in " << res_name << "\n";
+            std::cout << "Mismatch in " << res_name
+                      << " at " << i
+                      << " expected=" << a
+                      << " got=" << b << "\n";
             return false;
         }
+        i++;
     }
 
     std::cout << res_name << " OK\n";

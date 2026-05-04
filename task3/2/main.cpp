@@ -16,6 +16,8 @@
 #include <type_traits>
 #include <vector>
 #include <chrono>
+#include <argparse/argparse.hpp>
+
 
 template<typename T>
 class Srv
@@ -171,11 +173,16 @@ T f_pow(T x, T y)
 
 int main(int argc, char* argv[])
 {
-    size_t N = 1000;
-    if (argc == 2)
-    {
-        N = std::stoul(argv[1]);
-    }
+    argparse::ArgumentParser program("program_name");
+
+    program.add_argument("number")
+        .help("number of tasks")
+        .scan<'i', int>()
+        .default_value(10000);
+
+    program.parse_args(argc, argv);
+
+    auto N = program.get<int>("number");
 
     std::ofstream dataf("data.txt");
     std::mt19937 rng(42);
