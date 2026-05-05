@@ -1,4 +1,4 @@
-import os 
+import os
 
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 os.environ["OPENCV_VIDEOIO_PRIORITY_FFMPEG"] = "0"
@@ -8,158 +8,227 @@ import cv2
 import time
 import threading
 import argparse
+import os
 import logging
 from queue import Queue, Empty
 
-
+# Настройка логирования 
 os.makedirs("log", exist_ok=True)
 
 logging.basicConfig(
     filename="log/app.log",
     level=logging.INFO,
-    format="%(asctime)s %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s"
 )
-
 
 class Sensor:
     def get(self):
         raise NotImplementedError()
 
-
 class SensorX(Sensor):
-    def __init__(self, delay):
-        self.delay = delay
-        self.data = 0
+    def __init__(self, delay: float):
+        self._delay = delay
+        self._data = 0
 
-    def get(self):
-        time.sleep(self.delay)
-        self.data += 1
-        return self.data
-
+    def get(self) -> int:
+        time.sleep(self._delay)
+        self._data += 1
+        return self._data
 
 class SensorCam:
-    def __init__(self, cam, res):
-        self.cap = cv2.VideoCapture(cam)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, res[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res[1])
+    def __init__(self, cam_name: int, resolution: tuple):
+        self.cam_name = cam_name
+        self.width, self.height = resolution
+        self.cap = None
 
-        if not self.cap.isOpened():
-            logging.error("Camera init failed")
-            raise RuntimeError("Camera not found")
+        try:
+            self.cap = cv2.VideoCapture(cam_name)
+
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Camera {cam_name} not found")
+
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+
+            logging.info(f"Camera initialized: {cam_name}")
+
+        except Exception as e:
+            logging.error(f"Camera init error: {e}")
+            raise
 
     def get(self):
+        if not self.cap:
+            return None
+
         ret, frame = self.cap.read()
-        return frame if ret else None
+        if not ret:
+            logging.error("Camera read error")
+            return None
+        return frame
 
     def __del__(self):
-        self.cap.release()
-
+        try:
+            if self.cap:
+                self.cap.release()
+                logging.info("Camera released")
+        except Exception as e:
+            logging.error(f"Camera release error: {e}")
 
 class WindowImage:
-    def __init__(self, freq):
-        self.delay = 1 / freq
-        cv2.namedWindow("img")
+    def __init__(self, freq_hz: float):
+        self.delay = 1.0 / freq_hz
+        self.window_name = "Sensor System"
+
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        logging.info("Window initialized")
 
     def show(self, img):
-        cv2.imshow("img", img)
-        cv2.waitKey(1)
+        try:
+            cv2.imshow(self.window_name, img)
+            cv2.waitKey(1)
+            time.sleep(self.delay)
+        except Exception as e:
+            logging.error(f"Window show error: {e}")
 
     def __del__(self):
-        cv2.destroyAllWindows()
+        try:
+            cv2.destroyAllWindows()
+            logging.info("Window destroyed")
+        except Exception as e:
+            logging.error(f"Window destroy error: {e}")
 
+def sensor_worker(sensor, queue: Queue, stop_event: threading.Event):
+    try:
+        while not stop_event.is_set():
+            data = sensor.get()
 
-def cam_worker(cam, q, stop):
-    while not stop.is_set():
-        frame = cam.get()
-        if frame is None:
-            stop.set()
-            print("Read frame error")
-            break
-        q.put(frame)
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except Empty:
+                    pass
 
+            queue.put(data)
 
-def sensor_worker(sensor, q, stop):
-    while not stop.is_set():
-        q.put(sensor.get())
+    except Exception as e:
+        logging.error(f"Sensor worker error: {e}")
+        stop_event.set()
 
+def camera_worker(cam: SensorCam, queue: Queue, stop_event: threading.Event):
+    try:
+        while not stop_event.is_set():
+            frame = cam.get()
+
+            if frame is None:
+                stop_event.set()
+                print("Camera read error")
+                break
+
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except Empty:
+                    pass
+
+            queue.put(frame)
+
+    except Exception as e:
+        logging.error(f"Camera worker error: {e}")
+        print("There was a problem with the camera")
+        stop_event.set()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cam", default="0")
-    parser.add_argument("--res", default="640x480")
-    parser.add_argument("--freq", type=float, default=30)
+
+    parser.add_argument("--cam", type=str, default="0", help="Camera name")
+    parser.add_argument("--res", type=str, default="640x480", help="Resolution WxH")
+    parser.add_argument("--freq", type=float, default=30, help="Display frequency")
+
     args = parser.parse_args()
 
     w, h = map(int, args.res.split("x"))
 
-    stop = threading.Event()
+    stop_event = threading.Event()
 
-    cam_q = Queue(maxsize=1)
-    s1_q = Queue(maxsize=1)
-    s2_q = Queue(maxsize=1)
-    s3_q = Queue(maxsize=1)
+    cam_queue = Queue(maxsize=1)
+    s1_queue = Queue(maxsize=1)
+    s2_queue = Queue(maxsize=1)
+    s3_queue = Queue(maxsize=1)
 
     try:
         cam = SensorCam(int(args.cam), (w, h))
-    except Exception:
+    except RuntimeError:
         print("Camera not found")
         return
-    
-    s1 = SensorX(0.01)
-    s2 = SensorX(0.1)
-    s3 = SensorX(1.0)
 
-    win = WindowImage(args.freq)
+    s1 = SensorX(0.01)  
+    s2 = SensorX(0.1)   
+    s3 = SensorX(1.0)   
+
+    window = WindowImage(args.freq)
 
     threads = [
-        threading.Thread(target=cam_worker, args=(cam, cam_q, stop)),
-        threading.Thread(target=sensor_worker, args=(s1, s1_q, stop)),
-        threading.Thread(target=sensor_worker, args=(s2, s2_q, stop)),
-        threading.Thread(target=sensor_worker, args=(s3, s3_q, stop)),
+        threading.Thread(target=camera_worker, args=(cam, cam_queue, stop_event)),
+        threading.Thread(target=sensor_worker, args=(s1, s1_queue, stop_event)),
+        threading.Thread(target=sensor_worker, args=(s2, s2_queue, stop_event)),
+        threading.Thread(target=sensor_worker, args=(s3, s3_queue, stop_event)),
     ]
 
     for t in threads:
         t.start()
 
-    last1 = last2 = last3 = 0
+    try:
+        last_s1 = last_s2 = last_s3 = 0
 
-    while not stop.is_set():
-        try:
-            frame = cam_q.get(timeout=1)
-        except Empty:
-            continue
+        while not stop_event.is_set():
+            try:
+                frame = cam_queue.get(timeout=1)
+            except Empty:
+                continue
 
-        try:
-            last1 = s1_q.get_nowait()
-        except Empty: 
-            pass
+            try:
+                last_s1 = s1_queue.get_nowait()
+            except Empty:
+                pass
 
-        try: 
-            last2 = s2_q.get_nowait()
-        except Empty: 
-            pass
+            try:
+                last_s2 = s2_queue.get_nowait()
+            except Empty:
+                pass
 
-        try: 
-            last3 = s3_q.get_nowait()
-        except Empty: 
-            pass
+            try:
+                last_s3 = s3_queue.get_nowait()
+            except Empty:
+                pass
 
-        cv2.putText(frame, f"S1: {last1}", (20, 30), 0, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, f"S2: {last2}", (20, 60), 0, 0.7, (255, 0, 0), 2)
-        cv2.putText(frame, f"S3: {last3}", (20, 90), 0, 0.7, (0, 0, 255), 2)
+            cv2.putText(frame, f"S1 (100Hz): {last_s1}", (20, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-        win.show(frame)
+            cv2.putText(frame, f"S2 (10Hz): {last_s2}", (20, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            stop.set()
-            break
+            cv2.putText(frame, f"S3 (1Hz): {last_s3}", (20, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-    for t in threads:
-        t.join(timeout=1)
+            window.show(frame)
 
-    del cam
-    del win
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                stop_event.set()
+                break
 
+    except KeyboardInterrupt:
+        stop_event.set()
+
+    finally:
+        stop_event.set()
+
+        for t in threads:
+            t.join(timeout=2)
+
+        del cam
+        del window
+
+        logging.info("Program stopped safely")
 
 if __name__ == "__main__":
     main()
