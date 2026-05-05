@@ -1,8 +1,13 @@
+import os 
+
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+os.environ["OPENCV_VIDEOIO_PRIORITY_FFMPEG"] = "0"
+os.environ["OPENCV_VIDEOIO_DEBUG"] = "0"
+
 import cv2
 import time
 import threading
 import argparse
-import os
 import logging
 from queue import Queue, Empty
 
@@ -68,6 +73,7 @@ def cam_worker(cam, q, stop):
         frame = cam.get()
         if frame is None:
             stop.set()
+            print("Read frame error")
             break
         q.put(frame)
 
@@ -93,8 +99,12 @@ def main():
     s2_q = Queue(maxsize=1)
     s3_q = Queue(maxsize=1)
 
-    cam = SensorCam(int(args.cam), (w, h))
-
+    try:
+        cam = SensorCam(int(args.cam), (w, h))
+    except Exception:
+        print("Camera not found")
+        return
+    
     s1 = SensorX(0.01)
     s2 = SensorX(0.1)
     s3 = SensorX(1.0)
