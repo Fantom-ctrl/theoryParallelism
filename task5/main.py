@@ -4,7 +4,11 @@ import cv2
 from ultralytics import YOLO
 from multiprocessing import Process, Queue, cpu_count
 from queue import Empty
+import os
 
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+os.environ["OPENCV_VIDEOIO_PRIORITY_FFMPEG"] = "0"
+os.environ["OPENCV_VIDEOIO_DEBUG"] = "0"
 
 class VideoCaptureRALL:
     def __init__(self, source):
@@ -67,7 +71,12 @@ def worker(input_q, output_q):
 
 
 def run_single(source, output_path):
-    cap = VideoCaptureRALL(source)
+    try:
+        cap = VideoCaptureRALL(source)
+    except RuntimeError:
+        print("Source not found")
+        return
+
 
     fps = cap.cap.get(cv2.CAP_PROP_FPS)
     if fps == 0:
@@ -84,6 +93,7 @@ def run_single(source, output_path):
     while True:
         ret, frame = cap.read()
         if not ret:
+            print("Camera read error")
             break
 
         results = model.infer(frame)
@@ -106,7 +116,11 @@ def run_single(source, output_path):
 
 
 def run_multi(source, output_path, n_workers):
-    cap = VideoCaptureRALL(source)
+    try:
+        cap = VideoCaptureRALL(source)
+    except RuntimeError:
+        print("Source not found")
+        return
 
     fps = cap.cap.get(cv2.CAP_PROP_FPS)
     if fps == 0:
@@ -142,6 +156,7 @@ def run_multi(source, output_path, n_workers):
             ret, frame = cap.read()
 
             if not ret:
+                print("Camera read error")
                 break
 
             input_q.put((frame_id, frame))
