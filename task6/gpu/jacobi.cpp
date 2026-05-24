@@ -8,79 +8,72 @@
 #include <boost/program_options.hpp>
 
 #include "laplace2d.h"
-#include <nvtx3/nvToolsExt.h>
 
 namespace po = boost::program_options;
 
-void saveMatrix(const char* fileName, double* matrix, int rows, int cols)
+void saveMatrix(const char* file_path, double* grid, int rows, int cols)
 {
-    std::ofstream outFile(fileName);
+    std::ofstream out(file_path);
 
-    for (int row = 0; row < rows; row++)
+    for (int r = 0; r < rows; r++)
     {
-        for (int col = 0; col < cols; col++)
+        for (int c = 0; c < cols; c++)
         {
-            outFile << matrix[row * cols + col] << " ";
+            out << grid[r * cols + c] << " ";
         }
-        outFile << "\n";
+        out << "\n";
     }
 
-    outFile.close();
+    out.close();
 }
 
 int main(int argc, char **argv)
 {
-    int gridSize;
-    double epsilon;
-    int maxIterations;
+    int grid_size;
+    double tolerance;
+    int max_iters;
 
     po::options_description desc("Options");
     desc.add_options()
-        ("n", po::value<int>(&gridSize)->required(), "grid size (n x n)")
-        ("eps", po::value<double>(&epsilon)->default_value(1e-6), "accuracy")
-        ("iter", po::value<int>(&maxIterations)->default_value(1000000), "max iterations");
+        ("n", po::value<int>(&grid_size)->required(), "grid size (n x n)")
+        ("eps", po::value<double>(&tolerance)->default_value(1e-6), "accuracy")
+        ("iter", po::value<int>(&max_iters)->default_value(1000000), "max iterations");
 
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
-    int cols = gridSize;
-    int rows = gridSize;
+    int cols = grid_size;
+    int rows = grid_size;
 
-    double maxError = 1.0;
+    double error_val = 1.0;
 
     double *__restrict grid = (double *)malloc(sizeof(double) * rows * cols);
-    double *__restrict grid_new = (double *)malloc(sizeof(double) * rows * cols);
+    double *__restrict grid_next = (double *)malloc(sizeof(double) * rows * cols);
 
-    nvtxRangePushA("init");
-    initialize(grid, grid_new, cols, rows);
-    nvtxRangePop();
+    initialize(grid, grid_next, cols, rows);
 
     int iteration = 0;
 
-    auto startTime = std::chrono::high_resolution_clock::now();
+    auto start_time = std::chrono::high_resolution_clock::now();
 
-    nvtxRangePushA("main loop");
-
-    while (maxError > epsilon && iteration < maxIterations)
+    while (error_val > tolerance && iteration < max_iters)
     {
-        nvtxRangePushA("calc");
-        maxError = calcNext(grid, grid_new, cols, rows);
-        nvtxRangePop();
+        error_val = calcNext(grid, grid_next, cols, rows);
+        if (iteration % 100 == 0)
+            error_val = calcNext(grid, grid_next, cols, rows);
+        else
+            calcNextNoError(grid, grid_next, cols, rows);
 
-        nvtxRangePushA("swap");
-        double* tmp = grid;
-        grid = grid_new;
-        grid_new = tmp;
-        nvtxRangePop();
+        double* temp = grid;
+        grid = grid_next;
+        grid_next = temp;
 
         iteration++;
     }
 
-    nvtxRangePop();
-
-    auto endTime = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> runtime = endTime - startTime;
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> runtime = end_time - start_time;
 
     #pragma acc update self(grid[:rows*cols])
     saveMatrix("result.txt", grid, rows, cols);
@@ -88,7 +81,7 @@ int main(int argc, char **argv)
     printf("Iterations: %d\n", iteration);
     printf("Time: %f s\n", runtime.count());
 
-    deallocate(grid, grid_new);
+    deallocate(grid, grid_next);
 
     return 0;
 }
