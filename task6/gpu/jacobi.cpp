@@ -44,14 +44,16 @@ int main(int argc, char **argv)
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
-    int width = gridSize;
+    int cols = gridSize;
+    int rows = gridSize;
+
     double maxError = 1.0;
 
-    double *__restrict grid = (double *)malloc(sizeof(double) * gridSize * width);
-    double *__restrict gridNext = (double *)malloc(sizeof(double) * gridSize * width);
+    double *__restrict grid = (double *)malloc(sizeof(double) * rows * cols);
+    double *__restrict grid_new = (double *)malloc(sizeof(double) * rows * cols);
 
     nvtxRangePushA("init");
-    initialize(grid, gridNext, width, gridSize);
+    initialize(grid, grid_new, cols, rows);
     nvtxRangePop();
 
     int iteration = 0;
@@ -63,29 +65,30 @@ int main(int argc, char **argv)
     while (maxError > epsilon && iteration < maxIterations)
     {
         nvtxRangePushA("calc");
-        maxError = calcNext(grid, gridNext, width, gridSize);
+        maxError = calcNext(grid, grid_new, cols, rows);
         nvtxRangePop();
 
         nvtxRangePushA("swap");
         double* tmp = grid;
-        grid = gridNext;
-        gridNext = tmp;
+        grid = grid_new;
+        grid_new = tmp;
         nvtxRangePop();
 
         iteration++;
     }
-    
+
     nvtxRangePop();
 
     auto endTime = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> runtime = endTime - startTime;
 
-    saveMatrix("result.txt", grid, gridSize, width);
+    #pragma acc update self(grid[:rows*cols])
+    saveMatrix("result.txt", grid, rows, cols);
 
     printf("Iterations: %d\n", iteration);
     printf("Time: %f s\n", runtime.count());
 
-    deallocate(grid, gridNext);
+    deallocate(grid, grid_new);
 
     return 0;
 }
