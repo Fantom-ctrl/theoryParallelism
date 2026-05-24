@@ -49,20 +49,32 @@ int main(int argc, char **argv)
     double *__restrict grid = (double *)malloc(sizeof(double) * gridSize * width);
     double *__restrict gridNext = (double *)malloc(sizeof(double) * gridSize * width);
 
+    nvtxRangePushA("init");
     initialize(grid, gridNext, width, gridSize);
+    nvtxRangePop();
 
     int iteration = 0;
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
+    nvtxRangePushA("main loop");
+
     while (maxError > epsilon && iteration < maxIterations)
     {
+        nvtxRangePushA("calc");
         maxError = calcNext(grid, gridNext, width, gridSize);
+        nvtxRangePop();
 
-        swap(grid, gridNext, width, gridSize);
+        nvtxRangePushA("swap");
+        double* tmp = grid;
+        grid = gridNext;
+        gridNext = tmp;
+        nvtxRangePop();
 
         iteration++;
     }
+    
+    nvtxRangePop();
 
     auto endTime = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> runtime = endTime - startTime;

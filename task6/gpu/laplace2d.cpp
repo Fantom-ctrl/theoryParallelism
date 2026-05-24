@@ -11,6 +11,13 @@ void initialize(double *__restrict grid, double *__restrict gridNext, int width,
 
     for (int i = 0; i < width; i++) 
     {
+        double valueBottom = 10.0 + (20.0 - 10.0) * i / (width - 1);
+        grid[i] = valueBottom;
+        gridNext[i] = valueBottom;
+    }
+
+    for (int i = 0; i < width; i++) 
+    {
         double valueBottom = 20.0 + (30.0 - 20.0) * i / (width - 1);
         grid[(height - 1) * width + i] = valueBottom;
         gridNext[(height - 1) * width + i] = valueBottom;
@@ -67,19 +74,6 @@ double calcNext(double *__restrict grid, double *__restrict gridNext, int width,
     }
 
     return maxError;
-}
-
-void swap(double *__restrict grid, double *__restrict gridNext, int width, int height)
-{
-    #pragma acc parallel loop present(grid, gridNext)
-    for (int j = 1; j < height - 1; j++)
-    {
-        #pragma acc loop
-        for (int i = 1; i < width - 1; i++)
-        {
-            grid[OFFSET(j, i, width)] = gridNext[OFFSET(j, i, width)];
-        }
-    }
 }
 
 void deallocate(double *__restrict grid, double *__restrict gridNext)

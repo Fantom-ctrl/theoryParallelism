@@ -2,6 +2,4 @@ void initialize(double *__restrict grid, double *__restrict gridNext, int width,
 
 double calcNext(double *__restrict grid, double *__restrict gridNext, int width, int height);
 
-void swap(double *__restrict grid, double *__restrict gridNext, int width, int height);
-
 void deallocate(double *__restrict grid, double *__restrict gridNext);
