@@ -1,5 +1,5 @@
-void initialize(double * A, double * Anew, int m, int n);
+void initialize(double *grid, double *gridNext, int width, int height);
 
-double calcNext(double *__restrict A, double *__restrict Anew, int m, int n);
+double calcNext(double *__restrict grid, double *__restrict gridNext, int width, int height);
 
-void deallocate(double * A, double * Anew);
+void deallocate(double *grid, double *gridNext);

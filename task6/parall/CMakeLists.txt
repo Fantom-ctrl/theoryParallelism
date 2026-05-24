@@ -8,6 +8,10 @@ set(CMAKE_CXX_COMPILER pgc++)
 
 set(CMAKE_CXX_FLAGS "-O2 -acc=multicore -Minfo=all")
 
+find_package(CUDA REQUIRED)
+
+include_directories(${CUDA_INCLUDE_DIRS})
+
 find_package(Boost REQUIRED COMPONENTS program_options)
 
 add_executable(app jacobi.cpp laplace2d.cpp)

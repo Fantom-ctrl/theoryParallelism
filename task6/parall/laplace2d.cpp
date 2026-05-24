@@ -2,82 +2,81 @@
 #include <cstdlib>
 #include <cstring>
 
-
-void initialize(double *A, double * Anew, int m, int n)
+void initialize(double *grid, double *gridNext, int width, int height)
 {
-    memset(A, 0, n * m * sizeof(double));
-    memset(Anew, 0, n * m * sizeof(double));
+    memset(grid, 0, height * width * sizeof(double));
+    memset(gridNext, 0, height * width * sizeof(double));
 
-    for (int i = 0; i < m; i++) 
+    for (int i = 0; i < width; i++) 
     {
-        double v = 10.0 + (20.0 - 10.0) * i / (m - 1);
-        A[i] = v;
-        Anew[i] = v;
+        double valueTop = 10.0 + (20.0 - 10.0) * i / (width - 1);
+        grid[i] = valueTop;
+        gridNext[i] = valueTop;
     }
 
-    for (int i = 0; i < m; i++) 
+    for (int i = 0; i < width; i++) 
     {
-        double v = 20.0 + (30.0 - 20.0) * i / (m - 1);
-        A[(n - 1) * m + i] = v;
-        Anew[(n - 1) * m + i] = v;
+        double valueBottom = 20.0 + (30.0 - 20.0) * i / (width - 1);
+        grid[(height - 1) * width + i] = valueBottom;
+        gridNext[(height - 1) * width + i] = valueBottom;
     }
 
-    for (int j = 0; j < n; j++) 
+    for (int j = 0; j < height; j++) 
     {
-        double vL = 10.0 + (20.0 - 10.0) * j / (n - 1);
-        double vR = 20.0 + (30.0 - 20.0) * j / (n - 1);
+        double valueLeft = 10.0 + (20.0 - 10.0) * j / (height - 1);
+        double valueRight = 20.0 + (30.0 - 20.0) * j / (height - 1);
 
-        A[j * m] = vL;
-        Anew[j * m] = vL;
+        grid[j * width] = valueLeft;
+        gridNext[j * width] = valueLeft;
 
-        A[j * m + (m - 1)] = vR;
-        Anew[j * m + (m - 1)] = vR;
+        grid[j * width + (width - 1)] = valueRight;
+        gridNext[j * width + (width - 1)] = valueRight;
     }
 
-    A[0] = 10.0;
-    A[m - 1] = 20.0;
-    A[(n - 1) * m] = 20.0;
-    A[n * m - 1] = 30.0;
+    grid[0] = 10.0;
+    grid[width - 1] = 20.0;
+    grid[(height - 1) * width] = 20.0;
+    grid[height * width - 1] = 30.0;
 
-    Anew[0] = 10.0;
-    Anew[m - 1] = 20.0;
-    Anew[(n - 1) * m] = 20.0;
-    Anew[n * m - 1] = 30.0;
+    gridNext[0] = 10.0;
+    gridNext[width - 1] = 20.0;
+    gridNext[(height - 1) * width] = 20.0;
+    gridNext[height * width - 1] = 30.0;
 }
 
-double calcNext(double *__restrict A,
-                double *__restrict Anew,
-                int m,
-                int n)
+double calcNext(double *__restrict grid,
+                double *__restrict gridNext,
+                int width,
+                int height)
 {
-    double error = 0.0;
+    double maxError = 0.0;
 
-    #pragma acc parallel loop collapse(2) reduction(max:error)
-    for (int j = 1; j < n - 1; j++)
+    #pragma acc parallel loop collapse(2) reduction(max:maxError)
+    for (int j = 1; j < height - 1; j++)
     {
-        for (int i = 1; i < m - 1; i++)
+        for (int i = 1; i < width - 1; i++)
         {
-            int idx = j * m + i;
+            int idx = j * width + i;
 
-            double val =
+            double newValue =
                 0.25 * (
-                    A[idx + 1] +
-                    A[idx - 1] +
-                    A[idx - m] +
-                    A[idx + m]
+                    grid[idx + 1] +
+                    grid[idx - 1] +
+                    grid[idx - width] +
+                    grid[idx + width]
                 );
 
-            Anew[idx] = val;
+            gridNext[idx] = newValue;
 
-            error = fmax(error, fabs(val - A[idx]));
+            maxError = fmax(maxError, fabs(newValue - grid[idx]));
         }
     }
 
-    return error;
+    return maxError;
 }
 
-void deallocate(double * A, double * Anew)
+void deallocate(double *grid, double *gridNext)
 {
-    free(A);
-    free(Anew);
+    free(grid);
+    free(gridNext);
 }

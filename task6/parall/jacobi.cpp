@@ -12,80 +12,80 @@
 
 namespace po = boost::program_options;
 
-void saveMatrix(const char* filename, double* A, int n, int m)
+void saveMatrix(const char* fileName, double* matrix, int size, int width)
 {
-    std::ofstream out(filename);
+    std::ofstream outFile(fileName);
 
-    for (int i = 0; i < n; i++)
+    for (int row = 0; row < size; row++)
     {
-        for (int j = 0; j < m; j++)
+        for (int col = 0; col < width; col++)
         {
-            out << A[i * m + j] << " ";
+            outFile << matrix[row * width + col] << " ";
         }
-        out << "\n";
+        outFile << "\n";
     }
 
-    out.close();
+    outFile.close();
 }
 
 int main(int argc, char **argv)
 {
-    int n;
-    double tol;
-    int iter_max;
+    int gridSize;
+    double tolerance;
+    int maxIterations;
 
-    po::options_description desc("Options");
-    desc.add_options()
-        ("n", po::value<int>(&n)->required(), "grid size (n x n)")
-        ("eps", po::value<double>(&tol)->default_value(1e-6), "accuracy")
-        ("iter", po::value<int>(&iter_max)->default_value(1000000), "max iterations");
+    po::options_description options("Options");
+    options.add_options()
+        ("n", po::value<int>(&gridSize)->required(), "grid size (n x n)")
+        ("eps", po::value<double>(&tolerance)->default_value(1e-6), "accuracy")
+        ("iter", po::value<int>(&maxIterations)->default_value(1000000), "max iterations");
 
-    po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
-    po::notify(vm);
+    po::variables_map varMap;
+    po::store(po::parse_command_line(argc, argv, options), varMap);
+    po::notify(varMap);
 
-    int m = n;
-    double error = 1.0;
+    int width = gridSize;
+    double errorValue = 1.0;
 
-    double * A = (double *)malloc(sizeof(double) * n * m);
-    double * Anew = (double *)malloc(sizeof(double) * n * m);
+    double *grid = (double *)malloc(sizeof(double) * gridSize * width);
+    double *gridNext = (double *)malloc(sizeof(double) * gridSize * width);
 
     nvtxRangePushA("init");
-    initialize(A, Anew, m, n);
+    initialize(grid, gridNext, width, gridSize);
     nvtxRangePop();
 
-    int iter = 0;
+    int iteration = 0;
 
-    auto start = std::chrono::high_resolution_clock::now();
+    auto startTime = std::chrono::high_resolution_clock::now();
 
     nvtxRangePushA("main loop");
 
-    while (error > tol && iter < iter_max)
+    while (errorValue > tolerance && iteration < maxIterations)
     {
         nvtxRangePushA("calc");
-        error = calcNext(A, Anew, m, n);
+        errorValue = calcNext(grid, gridNext, width, gridSize);
         nvtxRangePop();
 
         nvtxRangePushA("swap");
-        double* tmp = A;
-        A = Anew;
-        Anew = tmp;
+        double* temp = grid;
+        grid = gridNext;
+        gridNext = temp;
         nvtxRangePop();
 
-        iter++;
+        iteration++;
     }
 
     nvtxRangePop();
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> runtime = end - start;
+    auto endTime = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> runtime = endTime - startTime;
 
-    saveMatrix("result.txt", A, n, m);
+    saveMatrix("result.txt", grid, gridSize, width);
 
-    printf("Iterations: %d\n", iter);
+    printf("Iterations: %d\n", iteration);
     printf("Time: %f s\n", runtime.count());
 
-    deallocate(A, Anew);
+    deallocate(grid, gridNext);
 
     return 0;
 }
