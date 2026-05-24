@@ -8,6 +8,7 @@
 #include <boost/program_options.hpp>
 
 #include "laplace2d.h"
+#include <nvtx3/nvToolsExt.h>
 
 namespace po = boost::program_options;
 
