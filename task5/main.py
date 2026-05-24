@@ -5,6 +5,7 @@ from ultralytics import YOLO
 from multiprocessing import Process, Queue, cpu_count
 from queue import Empty
 import os
+import torch
 
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 os.environ["OPENCV_VIDEOIO_PRIORITY_FFMPEG"] = "0"
@@ -55,6 +56,7 @@ def draw_results(results):
 
 def worker(input_q, output_q):
     model = YOLO("yolov8s-pose.pt")
+    model.to("cpu")
 
     while True:
         item = input_q.get()
@@ -248,10 +250,28 @@ def main():
             raise ValueError("Provide video_path or use --camera")
         source = args.video_path
 
+    gpu_available = torch.cuda.is_available()
+
     if args.mode == "s":
+        if gpu_available:
+            print("Running in SINGLE mode on GPU")
+        else:
+            print("Running in SINGLE mode on CPU")
+
         run_single(source, args.output)
+
     else:
-        run_multi(source, args.output, args.workers)
+
+        if gpu_available:
+            print("GPU detected.")
+            print("MULTI mode with GPU is disabled.")
+            print("Switching to CPU multiprocessing.")
+
+        max_workers = max(1, cpu_count() // 2)
+        workers = min(args.workers, max_workers)
+
+        print(f"Workers: {workers}")
+        run_multi(source, args.output, workers)
 
 
 if __name__ == "__main__":
