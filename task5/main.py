@@ -72,7 +72,7 @@ def worker(input_q, output_q):
         output_q.put((idx, annotated))
 
 
-def run_single(source, output_path):
+def run_single(source, output_path, dev):
     try:
         cap = VideoCaptureRALL(source)
     except RuntimeError:
@@ -88,7 +88,11 @@ def run_single(source, output_path):
     h = int(cap.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     writer = VideoWriterRALL(output_path, fps, (w, h))
-    model = YOLOModel()
+    model = YOLO("yolov8s-pose.pt")
+    if dev == "cpu":
+        model.to("cpu")
+    else:
+        model.to("cuda")
 
     start = time.time()
 
@@ -98,7 +102,7 @@ def run_single(source, output_path):
             print("Camera read error")
             break
 
-        results = model.infer(frame)
+        results = model(frame, verbose=False)
         frame = draw_results(results)
 
         if source == 0:
@@ -240,6 +244,7 @@ def main():
     parser.add_argument("--mode", choices=["s", "m"], default="s")
     parser.add_argument("--workers", type=int, default=cpu_count())
     parser.add_argument("--camera", action="store_true")
+    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
 
     args = parser.parse_args()
 
@@ -253,19 +258,25 @@ def main():
     gpu_available = torch.cuda.is_available()
 
     if args.mode == "s":
-        if gpu_available:
+        if gpu_available and args.device == "cuda":
             print("Running in SINGLE mode on GPU")
+        elif not gpu_available and args.device == "cuda":
+            print("GPU not available")
+            print("Running in SINGLE mode on CPU")
+            args.device = "cpu"
         else:
             print("Running in SINGLE mode on CPU")
 
-        run_single(source, args.output)
+        run_single(source, args.output, args.device)
 
     else:
 
-        if gpu_available:
-            print("GPU detected.")
+        if args.device == "cuda":
             print("MULTI mode with GPU is disabled.")
             print("Switching to CPU multiprocessing.")
+
+        if args.workers > cpu_count() // 2:
+            print(f"Max workers for this device is {cpu_count() // 2}")
 
         max_workers = max(1, cpu_count() // 2)
         workers = min(args.workers, max_workers)
