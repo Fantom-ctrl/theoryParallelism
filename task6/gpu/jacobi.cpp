@@ -59,7 +59,6 @@ int main(int argc, char **argv)
 
     while (error_val > tolerance && iteration < max_iters)
     {
-        error_val = calcNext(grid, grid_next, cols, rows);
         if (iteration % 100 == 0)
             error_val = calcNext(grid, grid_next, cols, rows);
         else
