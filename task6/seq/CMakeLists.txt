@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 set(CMAKE_CXX_COMPILER pgc++)
 
-set(CMAKE_CXX_FLAGS "-O2 -acc=multicore -Minfo=all")
+set(CMAKE_CXX_FLAGS "-O2 -acc=host -Minfo=all")
 
 find_package(CUDA REQUIRED)
 
